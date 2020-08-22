@@ -23,13 +23,6 @@ class Solution(object):
         return current
 
 
-<< << << < HEAD
-
-== == == =
-
->>>>>> > 21bb8bf94b167aacfe6b5af85bd614c655e83723
-
-
 def getTargetCopy(self, original, cloned, target):
     """
         :type original: TreeNode
@@ -38,12 +31,5 @@ def getTargetCopy(self, original, cloned, target):
         :rtype: TreeNode
         """
 
-
-<< << << < HEAD
-res = self.bfs(cloned, target)
-return res
-== == == =
-result = self.bfs(cloned, target)
-return result
-
->>>>>> > 21bb8bf94b167aacfe6b5af85bd614c655e83723
+    res = self.bfs(cloned, target)
+    return res
