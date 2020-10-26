@@ -9,7 +9,8 @@ jedi = "*"
 autopep8 = "*"
 
 [packages]
-beautifulsoup4 = "*"
+selenium = "*"
+chromedriver_py = "==86.0.4240.22"
 
 [requires]
 python_version = "3.8"
