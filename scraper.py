@@ -4,6 +4,7 @@
 
 import os
 import re
+import unicodedata
 from bs4 import BeautifulSoup
 from selenium import webdriver
 from selenium.common import exceptions
@@ -67,21 +68,45 @@ def find_urls(driver, wait):
 
 def write_local_problem(driver, wait, url, directories):
     driver.get(url)
+
+    # Select Python 3 as the language
+    lang_select = wait.until(EC.presence_of_element_located((
+        By.CSS_SELECTOR, 'div[class*="ant-select-enabled"')))
+    lang_select.click()
+    python_option = driver.find_element_by_css_selector(
+        'li[data-cy="lang-select-Python3"]')
+    python_option.click()
+
+    # Get the question title, body, and starting code
     title = wait.until(EC.presence_of_element_located((
         By.CSS_SELECTOR, 'div[data-cy="question-title"]')))
     body = wait.until(EC.presence_of_element_located((
         By.CSS_SELECTOR, '[class*="question-content"]')))
+    code = driver.find_element_by_css_selector(
+        'div.CodeMirror-code')
+
+    # Grab the text from the page elements
+    code_text = re.sub(r"\d\n", "", code.get_attribute('innerText'))
+    code_text = re.sub(r"\xa0", " ", code_text)
+    code_text = re.sub(r"\n\s{8}$", "", code_text)
     title_text = title.get_attribute('innerText')
     folder_name = re.sub(r"(\.|\s)+", "_", title_text).lower()
-    if folder_name in directories:
+
+    # Create a folder and start writing files
+    if folder_name in directories or folder_name + "_wip" in directories:
         print('Skipping problem: {}.\nFound existing local folder.'.format(title_text))
         return
     else:
+        # create folder with "_wip" suffix for work in progress; won't be committed to git
         print('Creating folder for problem with prompt: {}.'.format(title_text))
-        soup = BeautifulSoup(body.get_attribute('innerHTML'), 'html.parser')
-        parts = soup.div.contents
-        os.mkdir(folder_name)
-        with open('{}/prompt.md'.format(folder_name), 'w') as f:
+        os.mkdir(folder_name + "_wip")
+
+        # Use BS for the body for easier section navigation
+        body_soup = BeautifulSoup(
+            body.get_attribute('innerHTML'), 'html.parser')
+        parts = body_soup.div.contents
+
+        with open('{}/prompt.md'.format(folder_name + '_wip'), 'w') as f:
             f.write('# ' + title_text + '\n\n')
             for part in parts:
                 if part.name == 'p':
@@ -100,6 +125,9 @@ def write_local_problem(driver, wait, url, directories):
                         f.write('- ' + item.get_text() + '\n')
                 else:
                     continue
+
+        with open('{}/solution.py'.format(folder_name + '_wip'), 'w') as f:
+            f.write(code_text)
 
 
 def main():

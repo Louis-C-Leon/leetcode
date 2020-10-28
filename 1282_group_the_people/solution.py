@@ -1,6 +1,5 @@
 class Solution(object):
-    
-    
+
     def groupThePeople(self, groupSizes):
         """
         :type groupSizes: List[int]
@@ -14,7 +13,7 @@ class Solution(object):
                 groups[size].append(i)
             else:
                 groups[size] = [i]
-                
+
         for size in groups:
             idx = 0
             group = groups[size]
@@ -22,5 +21,5 @@ class Solution(object):
                 subgroup = group[idx:idx + size]
                 group = group[idx + size:]
                 output.append(subgroup)
-        
+
         return output
