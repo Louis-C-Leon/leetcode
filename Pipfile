@@ -11,6 +11,7 @@ autopep8 = "*"
 [packages]
 selenium = "*"
 chromedriver_py = "==86.0.4240.22"
+beautifulsoup4 = "*"
 
 [requires]
 python_version = "3.8"

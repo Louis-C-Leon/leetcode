@@ -2,6 +2,9 @@
 # so you can work from your favorite IDE! Finds problems based on the HTML of
 # leetcode.com as of October 20 2020
 
+import os
+import re
+from bs4 import BeautifulSoup
 from selenium import webdriver
 from selenium.common import exceptions
 from selenium.webdriver.common.by import By
@@ -13,20 +16,26 @@ difficulty = "Medium"
 results = 10
 
 
-def find_urls(driver):
+def setup_driver():
+    # Initialize Chrome webdriver from the system's installed Chrome app
+    # version 86 or newer
+    options = webdriver.chrome.options.Options()
+    options.headless = True
+    driver = webdriver.Chrome(executable_path=binary_path, options=options)
+    return driver
+
+
+def find_urls(driver, wait):
     driver.get(
-        'https://leetcode.com/problemset/all/?difficulty={}'.format(difficulty))
+        'https://leetcode.com/problemset/all/?difficulty={}'.format(difficulty.capitalize()))
 
     # Use the form control to show all tabe rows
-    wait = WebDriverWait(driver, 3)
     dropdown = wait.until(
         EC.presence_of_element_located((By.CSS_SELECTOR, 'select.form-control')))
-    print('hi')
     dropdown.click()
     options = dropdown.find_elements_by_css_selector('option')
     for option in options:
         text = option.get_attribute('innerText')
-        print(text)
         if text == 'all':
             option.click()
             break
@@ -56,28 +65,53 @@ def find_urls(driver):
     return free_problem_urls
 
 
+def write_local_problem(driver, wait, url, directories):
+    driver.get(url)
+    title = wait.until(EC.presence_of_element_located((
+        By.CSS_SELECTOR, 'div[data-cy="question-title"]')))
+    body = wait.until(EC.presence_of_element_located((
+        By.CSS_SELECTOR, '[class*="question-content"]')))
+    title_text = title.get_attribute('innerText')
+    folder_name = re.sub(r"(\.|\s)+", "_", title_text).lower()
+    if folder_name in directories:
+        print('Skipping problem: {}.\nFound existing local folder.'.format(title_text))
+        return
+    else:
+        print('Creating folder for problem with prompt: {}.'.format(title_text))
+        soup = BeautifulSoup(body.get_attribute('innerHTML'), 'html.parser')
+        parts = soup.div.contents
+        os.mkdir(folder_name)
+        with open('{}/prompt.md'.format(folder_name), 'w') as f:
+            f.write('# ' + title_text + '\n\n')
+            for part in parts:
+                if part.name == 'p':
+                    if part.get_text().strip() == '':
+                        continue
+                    elif part.contents[0].name != 'strong':
+                        f.write(part.get_text() + '\n\n')
+                    else:
+                        f.write('## ' + part.get_text() + '\n\n')
+                elif part.name == 'pre':
+                    f.write('```' + '\n' + part.get_text() +
+                            '\n' + '```' + '\n\n')
+                elif part.name == 'ul':
+                    items = part.find_all('li')
+                    for item in items:
+                        f.write('- ' + item.get_text() + '\n')
+                else:
+                    continue
+
+
 def main():
-    # Initialize Chrome webdriver from the system's installed Chrome app
-    # version 86 or newer
-    options = webdriver.chrome.options.Options()
-    options.headless = True
-    driver = webdriver.Chrome(executable_path=binary_path, options=options)
+    driver = setup_driver()
     wait = WebDriverWait(driver, 3)
-    urls = []
+    directories = os.listdir()
 
     try:
-        urls = find_urls(driver)
-        for i in range(10):
+        urls = find_urls(driver, wait)
+        for i in range(1):
             url = urls[i]
-            driver.get(url)
-            description = wait.until(EC.presence_of_element_located((
-                By.CSS_SELECTOR, 'div[data-key="description-content"]')))
-            title = description.find_element_by_css_selector(
-                'div[data-cy="question-title"]')
-            body = description.find_element_by_css_selector(
-                '[class*="question-content"]')
-            print(title.get_attribute('innerText'))
-            print(body.get_attribute('innerText'))
+            write_local_problem(driver, wait, url, directories)
 
     except exceptions.TimeoutException:
         print('TIMEOUT: The page took too long to load the expected elements.')
