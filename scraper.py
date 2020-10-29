@@ -4,7 +4,7 @@
 
 import os
 import re
-import unicodedata
+import argparse
 from bs4 import BeautifulSoup
 from selenium import webdriver
 from selenium.common import exceptions
@@ -13,112 +13,129 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from chromedriver_py import binary_path
 
-difficulty = "Medium"
-results = 10
 
+class Scraper():
+    def __init__(self, count, difficulty):
+        print("\nSetting up scraper...")
+        self.count = count
+        self.difficulty = difficulty
+        options = webdriver.chrome.options.Options()
+        options.headless = True
+        self.driver = webdriver.Chrome(
+            executable_path=binary_path, options=options)
+        self.wait = WebDriverWait(self.driver, 3)
+        self.problem_urls = []
+        self.directories = os.listdir()
 
-def setup_driver():
-    # Initialize Chrome webdriver from the system's installed Chrome app
-    # version 86 or newer
-    options = webdriver.chrome.options.Options()
-    options.headless = True
-    driver = webdriver.Chrome(executable_path=binary_path, options=options)
-    return driver
+    # lowercase title and replace space and '.' chars with '_'
+    def format_title(self, title):
+        return re.sub(r"(\.|\s)+", "_", title).lower()
 
+    # find free problem urls from leetcode HTML
+    def get_urls(self):
+        print("\nFinding free problem URLs from leetcode.com...")
+        self.driver.get(
+            'https://leetcode.com/problemset/all/?difficulty={}'.format(self.difficulty))
+        self.wait.until(EC.visibility_of_all_elements_located(
+            (By.CSS_SELECTOR, 'select.form-control, tbody.reactable-data tr')))
 
-def find_urls(driver, wait):
-    driver.get(
-        'https://leetcode.com/problemset/all/?difficulty={}'.format(difficulty.capitalize()))
-
-    # Use the form control to show all tabe rows
-    dropdown = wait.until(
-        EC.presence_of_element_located((By.CSS_SELECTOR, 'select.form-control')))
-    dropdown.click()
-    options = dropdown.find_elements_by_css_selector('option')
-    for option in options:
-        text = option.get_attribute('innerText')
-        if text == 'all':
-            option.click()
-            break
-
-    # Get the main table of problems and a list of the table rows
-    table = wait.until(EC.presence_of_element_located(
-        (By.CSS_SELECTOR, 'tbody.reactable-data')))
-    rows = table.find_elements_by_css_selector('tr')
-
-    # Iterate through the rows and find the free problems
-    free_problem_urls = []
-    for row in rows:
-        # Look for "Subscribe to unlock" icon in the row
-        try:
-            selector = 'span[data-original-title="Subscribe to unlock"]'
-            row.find_element_by_css_selector(selector)
-        # If no lock icon, then save the URL
-        except exceptions.NoSuchElementException:
-            link = row.find_element_by_css_selector('a')
-            url = link.get_attribute('href')
-            free_problem_urls.append(url)
-        finally:
-            if results != 'all' and len(free_problem_urls) >= results:
+        # Use the form control to show all table rows
+        dropdown = self.driver.find_element_by_css_selector(
+            'select.form-control')
+        dropdown.click()
+        options = dropdown.find_elements_by_css_selector('option')
+        for option in options:
+            text = option.get_attribute('innerText')
+            if text == 'all':
+                option.click()
                 break
-            continue
 
-    return free_problem_urls
+        table = self.driver.find_element_by_css_selector(
+            'tbody.reactable-data')
+        rows = table.find_elements_by_css_selector('tr')
+        for row in rows:
+            # Look for "Subscribe to unlock" icon in the row
+            try:
+                selector = 'span[data-original-title="Subscribe to unlock"]'
+                row.find_element_by_css_selector(selector)
+            # If no lock icon, then save the URL
+            except exceptions.NoSuchElementException:
+                link = row.find_element_by_css_selector('a')
+                url = link.get_attribute('href')
+                title = link.get_attribute('innerText')
+                problem_number = row.get_attribute(
+                    'innerText').strip().split()[0]
+                full_title = problem_number + '. ' + title
+                if self.format_title(full_title) in self.directories:
+                    continue
+                else:
+                    self.problem_urls.append(url)
+            finally:
+                if self.count != 'all' and len(self.problem_urls) >= self.count:
+                    break
+                continue
 
+    def write_local_problem(self, url):
+        self.driver.get(url)
+        self.wait.until(EC.visibility_of_all_elements_located(
+            (By.CSS_SELECTOR, 'div[class*="ant-select-light"], div[data-cy="question-title"], [class*="question-content"]')))
 
-def write_local_problem(driver, wait, url, directories):
-    driver.get(url)
+        # Select Python 3 as the language
+        lang_select = self.driver.find_element_by_css_selector(
+            'div[class*="ant-select-light"]')
+        lang_select.click()
+        python_option = self.driver.find_element_by_css_selector(
+            'li[data-cy="lang-select-Python3"]')
+        python_option.click()
 
-    # Select Python 3 as the language
-    lang_select = wait.until(EC.presence_of_element_located((
-        By.CSS_SELECTOR, 'div[class*="ant-select-enabled"')))
-    lang_select.click()
-    python_option = driver.find_element_by_css_selector(
-        'li[data-cy="lang-select-Python3"]')
-    python_option.click()
+        # Get the question title, body, and starting code
+        title = self.driver.find_element_by_css_selector(
+            'div[data-cy="question-title"]')
+        body = self.driver.find_element_by_css_selector(
+            '[class*="question-content"]')
+        code = self.driver.find_element_by_css_selector(
+            'div.CodeMirror-code')
 
-    # Get the question title, body, and starting code
-    title = wait.until(EC.presence_of_element_located((
-        By.CSS_SELECTOR, 'div[data-cy="question-title"]')))
-    body = wait.until(EC.presence_of_element_located((
-        By.CSS_SELECTOR, '[class*="question-content"]')))
-    code = driver.find_element_by_css_selector(
-        'div.CodeMirror-code')
+        # Grab the text from the page elements and do simple formatting
+        # Delete line numbers
+        code_text = re.sub(r"\d\n", "", code.get_attribute('innerText'))
+        # Replace unicode whitespace chars
+        code_text = re.sub(r"\xa0", " ", code_text)
+        # Delete the last line of empty space
+        code_text = re.sub(r"\n\s{8}$", "", code_text)
+        # Name the folder after the problem title; remove '.' and space chars
+        title_text = title.get_attribute('innerText')
+        folder_name = self.format_title(title_text)
 
-    # Grab the text from the page elements
-    code_text = re.sub(r"\d\n", "", code.get_attribute('innerText'))
-    code_text = re.sub(r"\xa0", " ", code_text)
-    code_text = re.sub(r"\n\s{8}$", "", code_text)
-    title_text = title.get_attribute('innerText')
-    folder_name = re.sub(r"(\.|\s)+", "_", title_text).lower()
+        print('Scraping page for: ' + title_text)
+        os.mkdir(folder_name)
 
-    # Create a folder and start writing files
-    if folder_name in directories or folder_name + "_wip" in directories:
-        print('Skipping problem: {}.\nFound existing local folder.'.format(title_text))
-        return
-    else:
-        # create folder with "_wip" suffix for work in progress; won't be committed to git
-        print('Creating folder for problem with prompt: {}.'.format(title_text))
-        os.mkdir(folder_name + "_wip")
-
-        # Use BS for the body for easier section navigation
+        # Use BS for the body to iterate through different tags
         body_soup = BeautifulSoup(
             body.get_attribute('innerHTML'), 'html.parser')
         parts = body_soup.div.contents
 
-        with open('{}/prompt.md'.format(folder_name + '_wip'), 'w') as f:
+        # Create formatted .md document with problem description, examples,
+        # and constraints. Ignore embedded images.
+        with open('{}/prompt.md'.format(folder_name), 'w') as f:
+            f.write(url + '\n\n')
             f.write('# ' + title_text + '\n\n')
             for part in parts:
+                # General descriptions and headings are in <p> tags
                 if part.name == 'p':
+                    # Ignore empty <p> tag
                     if part.get_text().strip() == '':
                         continue
-                    elif part.contents[0].name != 'strong':
-                        f.write(part.get_text() + '\n\n')
-                    else:
+                    # If the inner tag is <strong>, make the line a subheading
+                    elif part.contents[0].name == 'strong':
                         f.write('## ' + part.get_text() + '\n\n')
+                    else:
+                        f.write(part.get_text() + '\n\n')
+                # Starting code is in a <pre> tag
                 elif part.name == 'pre':
                     f.write('```' + '\n' + part.get_text() +
                             '\n' + '```' + '\n\n')
+                # Constraints for the problem are in a <ul> tag
                 elif part.name == 'ul':
                     items = part.find_all('li')
                     for item in items:
@@ -126,26 +143,46 @@ def write_local_problem(driver, wait, url, directories):
                 else:
                     continue
 
-        with open('{}/solution.py'.format(folder_name + '_wip'), 'w') as f:
+        # Create .py file containing the starting code
+        with open('{}/solution.py'.format(folder_name), 'w') as f:
             f.write(code_text)
+
+    def write_all_problems(self):
+        for url in self.problem_urls:
+            self.write_local_problem(url)
+
+    def scrape(self):
+        self.get_urls()
+        self.write_all_problems()
+
+
+# Set up arguments for invoking script
+parser = argparse.ArgumentParser(
+    description='Scrape free problems from leetcode.com and write them to local files')
+
+parser.add_argument('--difficulty', '-d',
+                    choices=['easy', 'medium', 'hard'],
+                    default='medium',
+                    help='select the difficulty of problems (default medium)')
+
+parser.add_argument('--count', '-c',
+                    default='10',
+                    help='choose a number of remote problems to be scraped, or "all" (default 10).')
 
 
 def main():
-    driver = setup_driver()
-    wait = WebDriverWait(driver, 3)
-    directories = os.listdir()
+    arguments = parser.parse_args()
+    count = arguments.count
+    if count != 'all':
+        try:
+            count = int(count)
+        except ValueError:
+            raise ValueError(
+                'Invalid "count" (-c, --c) value. Should be an integer or "all"')
 
-    try:
-        urls = find_urls(driver, wait)
-        for i in range(1):
-            url = urls[i]
-            write_local_problem(driver, wait, url, directories)
-
-    except exceptions.TimeoutException:
-        print('TIMEOUT: The page took too long to load the expected elements.')
-    finally:
-        driver.quit()
+    scraper = Scraper(count, arguments.difficulty.capitalize())
+    scraper.scrape()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
