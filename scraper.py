@@ -33,7 +33,7 @@ class Scraper():
 
     # find free problem urls from leetcode HTML
     def get_urls(self):
-        print("\nFinding free problem URLs from leetcode.com...")
+        print("\nFinding free problem URLs from leetcode.com...\n")
         self.driver.get(
             'https://leetcode.com/problemset/all/?difficulty={}'.format(self.difficulty))
         self.wait.until(EC.visibility_of_all_elements_located(
